@@ -49,9 +49,27 @@ def entry_datetime(entry: Any) -> datetime | None:
         return None
 
 
-def collect_articles() -> list[dict[str, str | datetime]]:
+def parse_hn_metrics(summary: str) -> tuple[int | None, int | None]:
+    """Extract HN points/comments from hnrss metadata, if present."""
+    points_match = re.search(r"\bPoints:\s*(\d+)", summary, re.IGNORECASE)
+    comments_match = re.search(r"(?:#\s*)?Comments:\s*(\d+)", summary, re.IGNORECASE)
+    points = int(points_match.group(1)) if points_match else None
+    comments = int(comments_match.group(1)) if comments_match else None
+    return points, comments
+
+
+def clean_article_summary(summary: str) -> str:
+    """Strip HN link/engagement metadata so it isn't pasted into the post."""
+    summary = re.sub(r"Article URL:\s*https?://\S+", " ", summary, flags=re.IGNORECASE)
+    summary = re.sub(r"Comments URL:\s*https?://\S+", " ", summary, flags=re.IGNORECASE)
+    summary = re.sub(r"\bPoints:\s*\d+", " ", summary, flags=re.IGNORECASE)
+    summary = re.sub(r"(?:#\s*)?Comments:\s*\d+", " ", summary, flags=re.IGNORECASE)
+    return clean_text(summary)
+
+
+def collect_articles() -> list[dict[str, str | int | datetime | None]]:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=MAX_ARTICLE_AGE_HOURS)
-    articles: list[dict[str, str | datetime]] = []
+    articles: list[dict[str, str | int | datetime | None]] = []
 
     for source_name, feed_url in FEEDS:
         LOGGER.info("Reading %s", source_name)
@@ -63,7 +81,9 @@ def collect_articles() -> list[dict[str, str | datetime]]:
                 title = clean_text(entry.get("title", ""))
                 link = entry.get("link", "").strip()
                 published = entry_datetime(entry)
-                summary = clean_text(entry.get("summary", ""))
+                raw_summary = clean_text(entry.get("summary", ""))
+                points, comments = parse_hn_metrics(raw_summary)
+                summary = clean_article_summary(raw_summary)
 
                 if not title or not link or not published or published < cutoff:
                     continue
@@ -76,43 +96,48 @@ def collect_articles() -> list[dict[str, str | datetime]]:
                     "published": published,
                     "summary": summary[:420],
                     "source": source_name,
+                    "points": points,
+                    "comments": comments,
                 })
         except Exception as exc:  # A failed feed should not block the other feeds.
             LOGGER.warning("Could not read %s: %s", source_name, exc)
 
-    # Avoid duplicate stories by URL and return newest first.
-    unique: dict[str, dict[str, str | datetime]] = {}
+    unique: dict[str, dict[str, str | int | datetime | None]] = {}
     for article in articles:
         unique[str(article["link"])] = article
 
     return sorted(
         unique.values(),
-        key=lambda item: item["published"],
+        key=lambda item: (
+            item["points"] if isinstance(item["points"], int) else -1,
+            item["published"],
+        ),
         reverse=True,
     )
 
 
-def build_post(article: dict[str, str | datetime]) -> str:
+def build_post(article: dict[str, str | int | datetime | None]) -> str:
+    """Create a clean, honest draft without pretending generic filler is analysis."""
     title = str(article["title"])
     summary = str(article["summary"])
     link = str(article["link"])
     source = str(article["source"])
 
     lines = [
-        f"📰 Tech story worth watching: {title}",
+        f"Interesting tech story: {title}",
         "",
     ]
     if summary:
         lines.extend([summary, ""])
+
     lines.extend([
-        "Why it matters:",
-        "Technology moves quickly, but the important part is understanding how new developments affect the way we build, work, and solve problems.",
+        "The part worth looking into is what this changes for the people using it—not just the announcement itself.",
         "",
-        "What is your take on this development? Are you already exploring it?",
+        "I’d want to understand who benefits, what trade-offs it introduces, and how it performs in real use.",
         "",
-        f"Read more: {link}",
+        "What’s your take?",
         "",
-        "Source: " + source,
+        f"Read the original: {link}",
         "",
         " ".join(f"#{tag}" for tag in POST_HASHTAGS),
     ])
@@ -135,22 +160,27 @@ def main() -> int:
     filename = f"linkedin-draft-{now:%Y-%m-%d}.md"
     output_path = DRAFTS_DIR / filename
 
-    content = "\n".join([
+    hn_metrics = ""
+    if isinstance(selected["points"], int):
+        hn_metrics = f"**Hacker News engagement:** {selected['points']} points"
+        if isinstance(selected["comments"], int):
+            hn_metrics += f", {selected['comments']} comments"
+
+    metadata = [
         f"# LinkedIn Draft — {now:%Y-%m-%d}",
         "",
-        "> Review the facts, wording, and source before publishing. This is an automatically assembled draft, not an endorsement.",
+        "> Review and add your own specific takeaway before publishing. This draft is assembled from RSS data; it is not AI fact-checking or original analysis.",
         "",
         f"**Topic:** {selected['title']}",
         f"**Published:** {selected['published'].isoformat()}",
         f"**Source:** {selected['source']}",
         f"**Article:** {selected['link']}",
-        "",
-        "## Suggested post",
-        "",
-        post,
-        "",
-    ])
-    output_path.write_text(content, encoding="utf-8")
+    ]
+    if hn_metrics:
+        metadata.append(hn_metrics)
+    metadata.extend(["", "## Suggested post", "", post, ""])
+
+    output_path.write_text("\n".join(metadata), encoding="utf-8")
     LOGGER.info("Created draft: %s", output_path.relative_to(ROOT))
     print(f"Draft created: {output_path}")
     print("--- POST PREVIEW ---")
