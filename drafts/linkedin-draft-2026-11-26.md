@@ -1,25 +1,33 @@
 # LinkedIn Draft — 2026-11-26
 
-> Review the facts, wording, and source before publishing. This is an automatically assembled draft, not an endorsement.
+> Review the facts and add your own specific takeaway before publishing. This draft is assembled from RSS data; it is not AI fact-checking or original analysis.
 
-**Topic:** Kagi Watch
-**Published:** 2026-11-26T16:28:54+00:00
+**Topic:** The New York Times warns photographers not to update Photoshop over AI features
+**Published:** 2026-11-25T21:18:02+00:00
 **Source:** Hacker News
-**Article:** https://kagi.com/watch
+**Article:** https://www.theverge.com/ai-artificial-intelligence/1041227/the-new-york-times-warns-photographers-not-to-update-photoshop-over-ai-features
+**Hacker News engagement:** 536 points, 455 comments
 
-## Suggested post
+## Suggested post text
 
-📰 Tech story worth watching: Kagi Watch
+Interesting tech story: The New York Times warns photographers not to update Photoshop over AI features
 
-Article URL: https://kagi.com/watch Comments URL: https://news.ycombinator.com/item?id=50656862 Points: 20 # Comments: 19
+https://archive.ph/pcUgy
 
-Why it matters:
-Technology moves quickly, but the important part is understanding how new developments affect the way we build, work, and solve problems.
+The part worth looking into is what this changes for the people using it—not just the announcement itself.
 
-What is your take on this development? Are you already exploring it?
+I’d want to understand who benefits, what trade-offs it introduces, and how it performs in real use.
 
-Read more: https://kagi.com/watch
+What’s your take?
 
-Source: Hacker News
+Read the original: https://www.theverge.com/ai-artificial-intelligence/1041227/the-new-york-times-warns-photographers-not-to-update-photoshop-over-ai-features
 
 #Technology #SoftwareDevelopment #TechNews
+
+## Image to attach
+
+![Article image](images/article-image-2026-11-26.jpg)
+
+Image file: `drafts/images/article-image-2026-11-26.jpg`
+
+> This image is downloaded from the article's RSS media or social preview metadata. Check usage rights and attribution before publishing. LinkedIn publishing will need the image uploaded as media; a Markdown image alone does not publish an attachment.
