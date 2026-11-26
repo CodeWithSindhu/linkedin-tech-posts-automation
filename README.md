@@ -51,6 +51,8 @@ For Hacker News stories, it extracts points/comments and prioritizes higher-poin
 
 The generator removes Hacker News metadata from the post body so points/comments/URLs are not pasted as article text. It does not use an AI model, verify the article's claims, or create original reporting; add your own specific insight before publishing. Feed availability and article recency can vary.
 
+If the feed or article page provides an image, the script downloads a supported JPEG, PNG, or WebP image (up to 4 MB) into `drafts/images/` and adds an image preview to the Markdown draft. The image is included in the workflow artifact. Some articles have no usable preview image, so image attachment is best-effort. Check image usage rights and attribution before posting.
+
 ## Customization
 
 Edit `FEEDS`, `MAX_ARTICLE_AGE_HOURS`, and `POST_HASHTAGS` in `src/generate_draft.py`.
