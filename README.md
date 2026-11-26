@@ -47,7 +47,9 @@ The script uses public RSS feeds from:
 - Hacker News
 - The GitHub Blog
 
-Feed availability and article recency can vary. The script skips stale articles and gracefully reports when no suitable stories are available.
+For Hacker News stories, it extracts points/comments and prioritizes higher-point stories among the recent feed items. Other feeds are fallback candidates based on recency. This is a lightweight popularity signal, not a complete trend analysis.
+
+The generator removes Hacker News metadata from the post body so points/comments/URLs are not pasted as article text. It does not use an AI model, verify the article's claims, or create original reporting; add your own specific insight before publishing. Feed availability and article recency can vary.
 
 ## Customization
 
