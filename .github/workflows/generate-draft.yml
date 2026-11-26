@@ -45,7 +45,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linkedin-post-draft
-          path: drafts/*.md
+          path: drafts/
           if-no-files-found: error
           retention-days: 14
 
@@ -53,7 +53,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add drafts/*.md
+          git add drafts/
           if git diff --cached --quiet; then
             echo "No draft changes to commit."
           else
