@@ -9,7 +9,7 @@ A free, GitHub Actions-based project that discovers recent technology stories an
 1. GitHub Actions runs daily on a GitHub-hosted runner (your computer does not need to be on).
 2. A Python script reads public technology RSS feeds.
 3. It selects a recent story, builds a concise LinkedIn post draft, and saves it in `drafts/`.
-4. The draft is uploaded as a workflow artifact and committed to the repository.
+4. The draft and any available article preview image are uploaded together as a workflow artifact and committed to the repository.
 
 The workflow can also be started manually from **Actions → Generate LinkedIn Draft → Run workflow**.
 
@@ -57,7 +57,7 @@ Edit `FEEDS`, `MAX_ARTICLE_AGE_HOURS`, and `POST_HASHTAGS` in `src/generate_draf
 
 ## LinkedIn publishing (future phase)
 
-Automatic publishing is intentionally not configured. It requires a LinkedIn Developer application, approval for the appropriate posting product/permission, and a securely stored OAuth access token. Do not add tokens to source files or commit history. Until those prerequisites are met, review and publish drafts manually.
+Automatic publishing is intentionally not configured. It requires a LinkedIn Developer application, approval for the appropriate posting product/permission, and a securely stored OAuth access token. Do not add tokens to source files or commit history. Until those prerequisites are met, review and publish drafts manually. For image posts, the image file must be uploaded to LinkedIn as media; the Markdown preview is for draft review and is not itself a LinkedIn attachment.
 
 ## License
 
