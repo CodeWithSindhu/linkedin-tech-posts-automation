@@ -171,39 +171,92 @@ def collect_articles() -> list[dict[str, Any]]:
     return list(unique.values())
 
 
+# Keep a feed's tag from being treated as proof of the article's niche.
+NICHE_TERMS = {
+    "frontend": ("frontend", "front-end", "html", "javascript", "react", "web development", "browser", "dom", "web app"),
+    "modern-css": ("css", "stylesheet", "flexbox", "grid", "container query", "animation", "responsive"),
+    "javascript": ("javascript", "typescript", "ecmascript", "node.js", "nodejs"),
+    "react": ("react", "jsx", "next.js", "nextjs", "hooks"),
+    "backend": ("backend", "back-end", "api", "server", "python", "php", "node.js", "database", "authentication"),
+    "wordpress": ("wordpress", "wp-", "gutenberg", "woocommerce", "plugin", "theme development"),
+    "databases": ("database", "sql", "postgres", "mysql", "mongodb", "redis", "query"),
+    "devops-cloud": ("devops", "cloud", "docker", "kubernetes", "ci/cd", "deployment", "aws", "azure", "gcp"),
+    "ai": ("artificial intelligence", "machine learning", "llm", "ai model", "generative ai"),
+    "security": ("security", "vulnerability", "cve-", "authentication", "encryption", "privacy", "exploit"),
+    "developer-hacks": ("coding", "developer", "programming", "terminal", "workflow", "shortcut", "debugging", "productivity"),
+    "ui-ux-design": ("design", "ux", "ui", "user experience", "interface", "typography", "accessibility", "figma"),
+    "open-source": ("open source", "github", "repository", "maintainer", "license"),
+    "developer-tools": ("developer tool", "ide", "editor", "cli", "debugger", "github copilot", "vscode"),
+}
+PROMO_PATTERNS = (
+    r"\b(?:agency|our services|hire us|contact us|book a call|free consultation|"
+    r"get a quote|case study|we help businesses|at [a-z0-9-]+,? we|"
+    r"best .{0,30} agency|marketing agency|revenue scale)\b",
+    r"\b(?:sponsored|advertorial|affiliate link|buy now|limited time offer)\b",
+)
+PRACTICAL_TERMS = (
+    "how to", "tutorial", "tip", "trick", "guide", "snippet", "debug", "workflow",
+    "shortcut", "example", "build", "css", "layout", "release", "update", "open source",
+    "design", "performance", "security", "explained", "what changed", "useful",
+)
+
+
+def article_is_promotional(article: dict[str, Any]) -> bool:
+    text = (article["title"] + " " + article["summary"]).lower()
+    return any(re.search(pattern, text, flags=re.I) for pattern in PROMO_PATTERNS)
+
+
+def article_matches_niche(article: dict[str, Any]) -> bool:
+    niche = article["niche"]
+    text = (article["title"] + " " + article["summary"]).lower()
+    if niche == "tech-news":
+        # Broad tech-news feed: require a recognizable technical/product subject.
+        return any(term in text for term in (
+            "software", "technology", "developer", "programming", "computer",
+            "ai", "chip", "browser", "internet", "open source", "security",
+            "startup", "tech", "app", "platform",
+        ))
+    terms = NICHE_TERMS.get(niche, ())
+    if not terms:
+        return False
+    return any(term in text for term in terms)
+
+
 def quality_score(article: dict[str, Any]) -> float:
-    """Score freshness and useful topic signals; never label it as viral."""
+    """Rank valid candidates by freshness and practical value."""
     age = max(0.0, (datetime.now(timezone.utc) - article["published"]).total_seconds() / 3600)
     freshness = max(0.0, 100.0 - age * (100.0 / max(1, MAX_ARTICLE_AGE_HOURS)))
     text = (article["title"] + " " + article["summary"]).lower()
-    practical = (
-        "how to", "tutorial", "tip", "trick", "guide", "snippet", "debug",
-        "workflow", "shortcut", "example", "build", "use", "css", "layout",
-        "release", "launch", "update", "open source", "design", "performance",
-    )
-    relevance = sum(4 for term in practical if term in text)
-    if len(article["summary"]) > 120:
-        relevance += 10
-    if len(article["title"]) < 18 or len(article["title"]) > 180:
-        relevance -= 12
+    relevance = sum(5 for term in PRACTICAL_TERMS if term in text)
+    if 100 <= len(article["summary"]) <= 700:
+        relevance += 8
+    if len(article["title"]) < 22 or len(article["title"]) > 145:
+        relevance -= 15
+    if not article_matches_niche(article):
+        relevance -= 100
+    if article_is_promotional(article):
+        relevance -= 150
     return freshness + relevance
 
 
 def choose_one(articles: list[dict[str, Any]]) -> dict[str, Any] | None:
-    if not articles:
+    valid = [
+        article for article in articles
+        if article_matches_niche(article)
+        and not article_is_promotional(article)
+        and len(article["title"]) >= 22
+        and len(article["title"]) <= 145
+    ]
+    if not valid:
         return None
-    by_niche: dict[str, list[dict[str, Any]]] = {}
-    for article in articles:
-        by_niche.setdefault(article["niche"], []).append(article)
 
-    # Randomize the niche, then choose randomly from its stronger recent items.
-    available_niches = list(by_niche)
-    niche = random.choice(available_niches)
-    candidates = sorted(by_niche[niche], key=quality_score, reverse=True)
-    shortlist = candidates[:min(8, len(candidates))]
-    weights = [max(1.0, quality_score(item) - quality_score(shortlist[-1]) + 2) for item in shortlist]
-    chosen = random.choices(shortlist, weights=weights, k=1)[0]
-    chosen["niche"] = niche
+    # Randomize within a small high-quality shortlist, not across unrelated labels.
+    ranked = sorted(valid, key=quality_score, reverse=True)
+    shortlist = ranked[:min(12, len(ranked))]
+    top_score = quality_score(shortlist[0])
+    shortlist = [item for item in shortlist if quality_score(item) >= top_score - 18]
+    chosen = random.choice(shortlist)
+    chosen["niche"] = chosen["niche"]
     return chosen
 
 
@@ -297,68 +350,64 @@ def wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, m
 
 
 def create_social_graphic(source_path: Path, article: dict[str, Any], index: int, date_stamp: str) -> Path:
-    """Create an editorial square card using the real article image + sourced context."""
-    image = Image.open(source_path).convert("RGB")
-    canvas_size = 1200
-    image = ImageOps.fit(image, (canvas_size, canvas_size), method=Image.Resampling.LANCZOS)
-    # Rotate between visual treatments so the daily card is not identical.
-    layout = random.choice(("bottom-panel", "full-overlay", "side-panel"))
-    draw = ImageDraw.Draw(image, "RGBA")
+    """Create a clean image-led card: image area and text area never overlap."""
+    size = 1200
+    source = Image.open(source_path).convert("RGB")
+    # The source photo/illustration occupies its own top region. No text is drawn
+    # over it, so text embedded in a publisher image cannot collide with our copy.
+    photo = ImageOps.fit(source, (size, 470), method=Image.Resampling.LANCZOS)
+    canvas = Image.new("RGB", (size, size), (13, 20, 35))
+    canvas.paste(photo, (0, 0))
+    draw = ImageDraw.Draw(canvas)
+    draw.rectangle((0, 470, size, size), fill=(13, 20, 35))
+
+    margin = 72
+    label = NICHE_LABELS.get(article["niche"], "Technology").upper()
+    draw.text((margin, 520), label, font=load_font(28, bold=True), fill=(95, 205, 255))
+
     title = article["title"].strip()
-    summary = article["summary"]
-    context = summary[:180].rsplit(" ", 1)[0] if len(summary) > 180 else summary
-    if index > 1:
-        title = context or article["title"]
-        context = f"More context from {article['source']}"
-    small_font = load_font(30)
-    title_font = load_font(64 if len(title) < 75 else 52, bold=True)
-    context_font = load_font(28)
+    max_width = size - margin * 2
+    chosen_font = load_font(64, bold=True)
+    lines = wrap_text(draw, title, chosen_font, max_width)
+    while len(lines) > 4 and chosen_font.size > 42:
+        chosen_font = load_font(chosen_font.size - 4, bold=True)
+        lines = wrap_text(draw, title, chosen_font, max_width)
+    y = 585
+    line_height = chosen_font.size + 14
+    for line in lines[:4]:
+        draw.text((margin, y), line, font=chosen_font, fill=(255, 255, 255))
+        y += line_height
 
-    if layout == "bottom-panel":
-        draw.rectangle((0, 650, 1200, 1200), fill=(8, 15, 28, 226))
-        panel_x, panel_y, max_width = 72, 710, 1056
-    elif layout == "side-panel":
-        draw.rectangle((0, 0, 650, 1200), fill=(8, 15, 28, 222))
-        panel_x, panel_y, max_width = 58, 110, 535
-    else:
-        # Full-card tint plus strong lower contrast panel.
-        draw.rectangle((0, 0, 1200, 1200), fill=(8, 15, 28, 105))
-        draw.rounded_rectangle((54, 620, 1146, 1146), radius=42, fill=(8, 15, 28, 218))
-        panel_x, panel_y, max_width = 96, 690, 1008
-
-    niche_label = NICHE_LABELS.get(article["niche"], "Technology")
-    draw.text((panel_x, panel_y), niche_label.upper(), font=small_font, fill=(125, 210, 255, 255))
-    y = panel_y + 58
-    for line in wrap_text(draw, title, title_font, max_width)[:5]:
-        draw.text((panel_x, y), line, font=title_font, fill=(255, 255, 255, 255), stroke_width=1, stroke_fill=(0, 0, 0, 110))
-        y += 78
-    if context and y < 1050:
-        y += 14
-        for line in wrap_text(draw, context, context_font, max_width)[:2]:
-            draw.text((panel_x, y), line, font=context_font, fill=(230, 236, 245, 255))
-            y += 40
-    footer = f"ARTICLE: {article['source']}  •  REVIEW SOURCE BEFORE SHARING"
-    draw.text((panel_x, 1135), footer[:70], font=load_font(18), fill=(220, 225, 235, 255))
-    output = IMAGES_DIR / f"{date_stamp}-linkedin-card-{index}.jpg"
-    image.save(output, "JPEG", quality=90, optimize=True)
+    # Keep footer fixed and clear of the headline.
+    footer = "ONE IDEA • READ THE SOURCE • TEST IT IN YOUR PROJECT"
+    draw.text((margin, 1118), footer, font=load_font(22, bold=True), fill=(185, 198, 215))
+    output = IMAGES_DIR / f"{date_stamp}-linkedin-card-1.jpg"
+    canvas.save(output, "JPEG", quality=92, optimize=True)
     return output
 
 
 def make_post(article: dict[str, Any]) -> str:
+    """Write concise source-aware copy; never paste a raw, potentially truncated article."""
     niche = NICHE_LABELS.get(article["niche"], "Technology")
-    title = article["title"]
-    summary = article["summary"]
-    # Context is grounded only in the feed description; do not invent benefits.
-    lines = [f"{title}", ""]
-    if summary:
-        lines.extend([summary, ""])
+    title = article["title"].strip()
+    summary = clean_text(article.get("summary", ""))
+    # Feed descriptions are often full promotional pages. Use at most two complete
+    # sentences and reject text that looks like keyword-stuffed ad copy.
+    sentences = re.split(r"(?<=[.!?])\s+", summary)
+    context = " ".join(sentence.strip() for sentence in sentences[:2] if sentence.strip())
+    context = context[:420].rsplit(" ", 1)[0] if len(context) > 420 else context
+    context = re.sub(re.escape(title), "", context, flags=re.I).strip(" -:.")
+
+    lines = [title, ""]
+    if context:
+        lines.extend([context, ""])
     lines.extend([
         f"Topic: {niche}.",
         "",
-        "What caught my attention is the specific idea in this article—not just the headline.",
-        "I’d test or evaluate it against a real project before adopting it. What would you try first?",
+        "A useful thing to check when reading this:",
+        "What changed, why does it matter in a real project, and what trade-off should developers watch for?",
         "",
-        f"Read the original: {article['link']}",
+        f"Source: {article['link']}",
         "",
         HASHTAGS.get(article["niche"], "#Technology #Programming #Design"),
     ])
@@ -368,9 +417,12 @@ def make_post(article: dict[str, Any]) -> str:
 def write_draft(article: dict[str, Any], date_stamp: str) -> int:
     source_images = download_images(find_image_urls(article), date_stamp)
     graphics: list[Path] = []
-    for index, (source_path, _image_url) in enumerate(source_images, start=1):
+    # One composed image per daily post. Original source images remain in the
+    # artifact as references; don't create repetitive cards from every image.
+    if source_images:
+        source_path, _image_url = source_images[0]
         try:
-            graphics.append(create_social_graphic(source_path, article, index, date_stamp))
+            graphics.append(create_social_graphic(source_path, article, 1, date_stamp))
         except Exception as exc:
             LOGGER.warning("Could not create custom image %s: %s", source_path.name, exc)
 
