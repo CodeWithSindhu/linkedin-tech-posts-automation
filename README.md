@@ -8,7 +8,7 @@ A free, GitHub Actions-based daily LinkedIn draft generator. It runs on GitHub-h
 
 The generator creates **one topic and one LinkedIn draft per run**, not three unrelated category posts.
 
-It randomly chooses an available niche and a recent, relevant article from a broad technology mix:
+It scans recent articles across a broad technology mix, rejects promotional or niche-mismatched items, then randomly chooses from a shortlist of higher-quality candidates:
 
 - Frontend and backend development
 - Modern CSS and styling techniques
@@ -18,7 +18,7 @@ It randomly chooses an available niche and a recent, relevant article from a bro
 - UI/UX, design, tutorials, productivity tips, and smart developer hacks
 - General technology news
 
-It filters by article age, scores freshness and practical relevance, then randomizes among stronger candidates. Random selection means the niche and topic can vary; it does **not** mean every selected item is objectively trending or viral.
+It filters by article age, checks the article title/description against niche-specific terms, rejects common promotional/SEO patterns, scores freshness and practical value, then randomizes among a small shortlist. If no suitable article survives, the run fails rather than forcing a bad topic. Random selection does **not** mean every selected item is objectively trending or viral.
 
 ## Output
 
@@ -30,7 +30,7 @@ The workflow writes:
 
 ## Context and post copy
 
-The post uses the article title and feed description as source context. It avoids adding unverified technical claims or fabricated code tips. The copy is still a template-based draft, not expert analysis or AI-written content. Edit the suggested opinion/question so it accurately reflects your own experience before posting.
+The post uses the article title and at most two complete sentences from its feed description, with a hard length limit. It does not paste the full article or an abruptly truncated excerpt. The copy is still template-based and is not AI-written or expert analysis. Verify the article and edit the wording before posting.
 
 ## Article image treatment
 
