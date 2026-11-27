@@ -404,8 +404,11 @@ def make_post(article: dict[str, Any]) -> str:
     lines.extend([
         f"Topic: {niche}.",
         "",
-        "A useful thing to check when reading this:",
-        "What changed, why does it matter in a real project, and what trade-off should developers watch for?",
+        "The practical angle to look for:",
+        "• What changed from the previous approach?",
+        "• Where could it help, and what trade-off should you test?",
+        "",
+        "Would you try this in a real project?",
         "",
         f"Source: {article['link']}",
         "",
