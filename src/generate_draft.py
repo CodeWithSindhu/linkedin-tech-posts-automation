@@ -407,6 +407,14 @@ def write_draft(article: dict[str, Any], date_stamp: str) -> int:
 
 def main() -> int:
     DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
+    # Remove previous generated packs so legacy multi-topic drafts don't remain
+    # in the artifact/repository alongside today's single-topic post.
+    for old_draft in DRAFTS_DIR.glob("linkedin-*.md"):
+        old_draft.unlink(missing_ok=True)
+    if IMAGES_DIR.exists():
+        for old_image in IMAGES_DIR.iterdir():
+            if old_image.is_file():
+                old_image.unlink(missing_ok=True)
     articles = collect_articles()
     if not articles:
         LOGGER.error("No fresh articles found from configured feeds.")
