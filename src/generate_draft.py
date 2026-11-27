@@ -445,7 +445,11 @@ def write_draft(article: dict[str, Any], date_stamp: str) -> int:
     if graphics:
         for graphic in graphics:
             content.extend([f"![Custom article graphic](images/{graphic.name})", "", f"Image file: drafts/images/{graphic.name}", ""])
-        content.append("> These are designed editorial cards made from article imagery and its headline/context. They are not AI-generated illustrations. Confirm image reuse rights and attribution before posting.")
+        content.append("> The headline is placed in a separate solid panel below the article image to prevent text overlap. This is a designed card, not AI-generated artwork.")
+    if source_images:
+        content.extend(["", "## Original article images", "", "> Original images are included as references. Check publisher licensing and reuse rights before posting.", ""])
+        for source_path, image_url in source_images:
+            content.extend([f"![Original article image](images/{source_path.name})", "", f"Source image: {image_url}", ""])
     else:
         content.extend([
             "No usable article image was found. This draft is text-first; use the article's own image only if you have permission.",
