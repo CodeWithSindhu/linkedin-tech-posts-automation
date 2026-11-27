@@ -1,12 +1,13 @@
-"""Create a daily LinkedIn content pack from fresh technology, programming, and design feeds.
+"""Generate one randomized, source-grounded LinkedIn tech post per run.
 
-Draft-only: no LinkedIn API or credentials are used.
+The workflow is draft-only. It does not publish to LinkedIn or call a paid AI API.
 """
 from __future__ import annotations
 
 import html
 import logging
 import os
+import random
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,7 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
 import feedparser
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 ROOT = Path(__file__).resolve().parents[1]
 DRAFTS_DIR = ROOT / "drafts"
@@ -24,36 +26,77 @@ IMAGES_DIR = DRAFTS_DIR / "images"
 MAX_ARTICLE_AGE_HOURS = int(os.getenv("MAX_ARTICLE_AGE_HOURS", "72"))
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 MAX_IMAGES_PER_POST = 3
-HASHTAGS = {
-    "trending": ["TechNews", "Technology", "Innovation"],
-    "programming": ["Programming", "WebDevelopment", "CodingTips"],
-    "design": ["UIDesign", "WebDesign", "UX"],
-}
+IST = timezone(timedelta(hours=5, minutes=30))
 
-# Feed category controls which content pack slot an article can fill.
+# Wide topic coverage. A single niche is chosen per run; the chosen article
+# remains the only topic in that day's post.
 FEEDS = [
-    ("Hacker News", "https://hnrss.org/frontpage", "trending"),
-    ("GitHub Blog", "https://github.blog/feed/", "trending"),
-    ("GitHub Changelog", "https://github.blog/changelog/feed/", "trending"),
-    ("Google News — Technology", "https://news.google.com/rss/search?q=technology+when:2d&hl=en-US&gl=US&ceid=US:en", "trending"),
-    ("DEV — Web Development", "https://dev.to/feed/tag/webdev", "programming"),
-    ("DEV — JavaScript", "https://dev.to/feed/tag/javascript", "programming"),
-    ("DEV — Programming", "https://dev.to/feed/tag/programming", "programming"),
-    ("DEV — Tutorials", "https://dev.to/feed/tag/tutorial", "programming"),
-    ("DEV — Productivity", "https://dev.to/feed/tag/productivity", "programming"),
-    ("Stack Overflow Blog", "https://stackoverflow.blog/feed/", "programming"),
-    ("CSS-Tricks", "https://css-tricks.com/feed/", "programming"),
-    ("Smashing Magazine", "https://www.smashingmagazine.com/feed/", "design"),
-    ("Codrops", "https://tympanus.net/codrops/feed/", "design"),
-    ("UX Collective", "https://uxdesign.cc/feed", "design"),
+    ("Hacker News", "https://hnrss.org/frontpage", "tech-news"),
+    ("GitHub Blog", "https://github.blog/feed/", "open-source"),
+    ("GitHub Changelog", "https://github.blog/changelog/feed/", "developer-tools"),
+    ("Google News — Technology", "https://news.google.com/rss/search?q=technology+when:2d&hl=en-US&gl=US", "tech-news"),
+    ("DEV — Frontend", "https://dev.to/feed/tag/frontend", "frontend"),
+    ("DEV — Web Development", "https://dev.to/feed/tag/webdev", "frontend"),
+    ("DEV — CSS", "https://dev.to/feed/tag/css", "modern-css"),
+    ("DEV — JavaScript", "https://dev.to/feed/tag/javascript", "javascript"),
+    ("DEV — React", "https://dev.to/feed/tag/react", "react"),
+    ("DEV — Backend", "https://dev.to/feed/tag/backend", "backend"),
+    ("DEV — Python", "https://dev.to/feed/tag/python", "backend"),
+    ("DEV — WordPress", "https://dev.to/feed/tag/wordpress", "wordpress"),
+    ("DEV — Database", "https://dev.to/feed/tag/database", "databases"),
+    ("DEV — DevOps", "https://dev.to/feed/tag/devops", "devops-cloud"),
+    ("DEV — AI", "https://dev.to/feed/tag/ai", "ai"),
+    ("DEV — Security", "https://dev.to/feed/tag/security", "security"),
+    ("DEV — Productivity", "https://dev.to/feed/tag/productivity", "developer-hacks"),
+    ("DEV — Tutorial", "https://dev.to/feed/tag/tutorial", "developer-hacks"),
+    ("Stack Overflow Blog", "https://stackoverflow.blog/feed/", "developer-tools"),
+    ("CSS-Tricks", "https://css-tricks.com/feed/", "modern-css"),
+    ("Smashing Magazine", "https://www.smashingmagazine.com/feed/", "ui-ux-design"),
+    ("Codrops", "https://tympanus.net/codrops/feed/", "ui-ux-design"),
+    ("UX Collective", "https://uxdesign.cc/feed", "ui-ux-design"),
 ]
+
+NICHE_LABELS = {
+    "tech-news": "Technology & Tech News",
+    "open-source": "Open Source",
+    "developer-tools": "Developer Tools",
+    "frontend": "Frontend Development",
+    "modern-css": "Modern CSS & Styling",
+    "javascript": "JavaScript",
+    "react": "React",
+    "backend": "Backend Development",
+    "wordpress": "WordPress",
+    "databases": "Databases",
+    "devops-cloud": "DevOps & Cloud",
+    "ai": "AI & Machine Learning",
+    "security": "Cybersecurity",
+    "developer-hacks": "Developer Tips & Smart Hacks",
+    "ui-ux-design": "UI/UX & Design",
+}
+HASHTAGS = {
+    "tech-news": "#Technology #TechNews #Innovation",
+    "open-source": "#OpenSource #DeveloperTools #SoftwareDevelopment",
+    "developer-tools": "#DeveloperTools #Programming #Productivity",
+    "frontend": "#Frontend #WebDevelopment #JavaScript",
+    "modern-css": "#CSS #WebDesign #Frontend",
+    "javascript": "#JavaScript #WebDevelopment #Coding",
+    "react": "#ReactJS #Frontend #JavaScript",
+    "backend": "#Backend #SoftwareEngineering #Programming",
+    "wordpress": "#WordPress #WebDevelopment #PHP",
+    "databases": "#Databases #Backend #SoftwareEngineering",
+    "devops-cloud": "#DevOps #CloudComputing #Automation",
+    "ai": "#AI #MachineLearning #Technology",
+    "security": "#Cybersecurity #WebSecurity #SoftwareDevelopment",
+    "developer-hacks": "#CodingTips #DeveloperProductivity #Programming",
+    "ui-ux-design": "#UIDesign #UX #WebDesign",
+}
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 LOGGER = logging.getLogger(__name__)
 
 
 class ArticleMediaParser(HTMLParser):
-    """Collect social preview and article-body image URLs."""
+    """Collect article preview images and useful article-body images."""
     def __init__(self) -> None:
         super().__init__()
         self.urls: list[str] = []
@@ -65,6 +108,9 @@ class ArticleMediaParser(HTMLParser):
             if key in {"og:image", "og:image:url", "twitter:image", "twitter:image:src"}:
                 self.add(data.get("content"))
         elif tag.lower() == "img":
+            alt = (data.get("alt") or "").lower()
+            if any(word in alt for word in ("avatar", "profile", "logo", "icon")):
+                return
             self.add(data.get("src") or data.get("data-src") or data.get("data-lazy-src"))
 
     def add(self, value: str | None) -> None:
@@ -87,97 +133,78 @@ def entry_datetime(entry: Any) -> datetime | None:
         return None
 
 
-def parse_hn_metrics(summary: str) -> tuple[int | None, int | None]:
-    points = re.search(r"\bPoints:\s*(\d+)", summary, re.IGNORECASE)
-    comments = re.search(r"(?:#\s*)?Comments:\s*(\d+)", summary, re.IGNORECASE)
-    return (int(points.group(1)) if points else None,
-            int(comments.group(1)) if comments else None)
-
-
 def clean_summary(summary: str) -> str:
-    for pattern in (
-        r"Article URL:\s*https?://\S+",
-        r"Comments URL:\s*https?://\S+",
-        r"\bPoints:\s*\d+",
-        r"(?:#\s*)?Comments:\s*\d+",
-    ):
-        summary = re.sub(pattern, " ", summary, flags=re.IGNORECASE)
-    return clean_text(summary)
+    summary = re.sub(r"Article URL:\s*https?://\S+", " ", summary, flags=re.I)
+    summary = re.sub(r"Comments URL:\s*https?://\S+", " ", summary, flags=re.I)
+    summary = re.sub(r"\bPoints:\s*\d+", " ", summary, flags=re.I)
+    summary = re.sub(r"(?:#\s*)?Comments:\s*\d+", " ", summary, flags=re.I)
+    summary = clean_text(summary)
+    return summary[:1100]
 
 
 def collect_articles() -> list[dict[str, Any]]:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=MAX_ARTICLE_AGE_HOURS)
     articles: list[dict[str, Any]] = []
-    for source, feed_url, category in FEEDS:
-        LOGGER.info("Reading %s", source)
+    for source, feed_url, niche in FEEDS:
+        LOGGER.info("Reading %s [%s]", source, niche)
         try:
-            feed = feedparser.parse(feed_url, request_headers={"User-Agent": "LinkedInTechDraftBot/2.0"})
-            if getattr(feed, "bozo", False):
-                LOGGER.warning("Feed parse warning: %s", source)
+            feed = feedparser.parse(feed_url, request_headers={"User-Agent": "LinkedInTechDraftBot/3.0"})
             for entry in feed.entries:
                 title = clean_text(entry.get("title", ""))
                 link = str(entry.get("link", "")).strip()
                 published = entry_datetime(entry)
-                raw = clean_text(entry.get("summary", ""))
-                points, comments = parse_hn_metrics(raw)
-                summary = clean_summary(raw)
+                summary = clean_summary(entry.get("summary", ""))
                 if not title or not link or not published or published < cutoff:
                     continue
                 if urlparse(link).scheme not in {"http", "https"}:
                     continue
                 articles.append({
                     "title": title, "link": link, "published": published,
-                    "summary": summary[:900], "source": source, "category": category,
-                    "points": points, "comments": comments, "entry": entry,
+                    "summary": summary, "source": source, "niche": niche, "entry": entry,
                 })
         except Exception as exc:
             LOGGER.warning("Feed failed %s: %s", source, exc)
 
     unique: dict[str, dict[str, Any]] = {}
-    for item in articles:
-        unique[item["link"]] = item
+    for article in articles:
+        unique[article["link"]] = article
     return list(unique.values())
 
 
-def score_article(article: dict[str, Any], slot: str) -> float:
-    """Prefer fresh, category-relevant content and modest HN engagement."""
-    age_hours = max(0.0, (datetime.now(timezone.utc) - article["published"]).total_seconds() / 3600)
-    recency = max(0.0, 100.0 - age_hours * (100.0 / MAX_ARTICLE_AGE_HOURS))
-    score = recency
-    if article["category"] == slot:
-        score += 35
-    title = article["title"].lower()
-    summary = article["summary"].lower()
-    text = title + " " + summary
-
-    if slot == "programming":
-        keywords = ("how to", "tutorial", "tip", "trick", "guide", "snippet", "debug", "workflow", "shortcut", "productivity", "css", "javascript", "python", "react", "wordpress")
-        score += sum(8 for word in keywords if word in text)
-    elif slot == "design":
-        keywords = ("design", "ui", "ux", "layout", "typography", "color", "motion", "animation", "accessibility", "visual", "css")
-        score += sum(9 for word in keywords if word in text)
-    else:
-        keywords = ("release", "launch", "announces", "introduces", "security", "update", "open source", "new")
-        score += sum(6 for word in keywords if word in title)
-
-    if isinstance(article["points"], int):
-        score += min(article["points"], 100) * 0.6
-    if isinstance(article["comments"], int):
-        score += min(article["comments"], 100) * 0.15
-    return score
+def quality_score(article: dict[str, Any]) -> float:
+    """Score freshness and useful topic signals; never label it as viral."""
+    age = max(0.0, (datetime.now(timezone.utc) - article["published"]).total_seconds() / 3600)
+    freshness = max(0.0, 100.0 - age * (100.0 / max(1, MAX_ARTICLE_AGE_HOURS)))
+    text = (article["title"] + " " + article["summary"]).lower()
+    practical = (
+        "how to", "tutorial", "tip", "trick", "guide", "snippet", "debug",
+        "workflow", "shortcut", "example", "build", "use", "css", "layout",
+        "release", "launch", "update", "open source", "design", "performance",
+    )
+    relevance = sum(4 for term in practical if term in text)
+    if len(article["summary"]) > 120:
+        relevance += 10
+    if len(article["title"]) < 18 or len(article["title"]) > 180:
+        relevance -= 12
+    return freshness + relevance
 
 
-def choose_articles(articles: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    selected: dict[str, dict[str, Any]] = {}
-    used: set[str] = set()
-    for slot in ("trending", "programming", "design"):
-        candidates = [a for a in articles if a["link"] not in used]
-        if not candidates:
-            continue
-        best = max(candidates, key=lambda a: score_article(a, slot))
-        selected[slot] = best
-        used.add(best["link"])
-    return selected
+def choose_one(articles: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not articles:
+        return None
+    by_niche: dict[str, list[dict[str, Any]]] = {}
+    for article in articles:
+        by_niche.setdefault(article["niche"], []).append(article)
+
+    # Randomize the niche, then choose randomly from its stronger recent items.
+    available_niches = list(by_niche)
+    niche = random.choice(available_niches)
+    candidates = sorted(by_niche[niche], key=quality_score, reverse=True)
+    shortlist = candidates[:min(8, len(candidates))]
+    weights = [max(1.0, quality_score(item) - quality_score(shortlist[-1]) + 2) for item in shortlist]
+    chosen = random.choices(shortlist, weights=weights, k=1)[0]
+    chosen["niche"] = niche
+    return chosen
 
 
 def find_image_urls(article: dict[str, Any]) -> list[str]:
@@ -185,22 +212,19 @@ def find_image_urls(article: dict[str, Any]) -> list[str]:
     entry = article["entry"]
     for field in ("media_content", "media_thumbnail"):
         for item in entry.get(field) or []:
-            if isinstance(item, dict):
-                candidate = item.get("url")
-                if candidate:
-                    urls.append(candidate)
+            if isinstance(item, dict) and item.get("url"):
+                urls.append(item["url"])
     for item in entry.get("links", []) or []:
         if item.get("rel") == "enclosure" and str(item.get("type", "")).startswith("image/"):
             urls.append(item.get("href", ""))
 
-    # Parse article preview metadata and a few inline content images.
     try:
-        request = Request(article["link"], headers={"User-Agent": "Mozilla/5.0 (compatible; LinkedInTechDraftBot/2.0)"})
+        request = Request(article["link"], headers={"User-Agent": "Mozilla/5.0 (compatible; LinkedInTechDraftBot/3.0)"})
         with urlopen(request, timeout=15) as response:
             page = response.read(1_500_000).decode("utf-8", errors="replace")
         parser = ArticleMediaParser()
         parser.feed(page)
-        urls.extend(urljoin(article["link"], u) for u in parser.urls)
+        urls.extend(urljoin(article["link"], url) for url in parser.urls)
     except Exception as exc:
         LOGGER.info("Article image scan skipped: %s", exc)
 
@@ -210,86 +234,175 @@ def find_image_urls(article: dict[str, Any]) -> list[str]:
             continue
         absolute = urljoin(article["link"], candidate)
         parsed = urlparse(absolute)
-        if parsed.scheme in {"http", "https"} and absolute not in valid:
-            # Avoid obvious tiny icons, avatars and tracking pixels.
-            lower = absolute.lower()
-            if not any(token in lower for token in ("avatar", "favicon", "logo-small", "pixel", "tracking")):
-                valid.append(absolute)
+        lower = absolute.lower()
+        if parsed.scheme not in {"http", "https"} or absolute in valid:
+            continue
+        if any(token in lower for token in ("avatar", "favicon", "logo-small", "pixel", "tracking", "placeholder")):
+            continue
+        valid.append(absolute)
     return valid[:12]
 
 
-def download_images(urls: list[str], date_stamp: str, slot: str) -> list[str]:
-    downloaded: list[str] = []
+def download_images(urls: list[str], date_stamp: str) -> list[tuple[Path, str]]:
+    downloaded: list[tuple[Path, str]] = []
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     for index, image_url in enumerate(urls[:MAX_IMAGES_PER_POST], start=1):
         try:
-            request = Request(image_url, headers={"User-Agent": "Mozilla/5.0 (compatible; LinkedInTechDraftBot/2.0)"})
+            request = Request(image_url, headers={"User-Agent": "Mozilla/5.0 (compatible; LinkedInTechDraftBot/3.0)"})
             with urlopen(request, timeout=15) as response:
                 mime = response.headers.get("Content-Type", "").split(";")[0].lower()
-                if mime not in {"image/jpeg", "image/png", "image/webp"}:
+                if not mime.startswith("image/"):
                     continue
                 data = response.read(MAX_IMAGE_BYTES + 1)
                 if len(data) > MAX_IMAGE_BYTES:
                     continue
-            ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[mime]
-            name = f"{date_stamp}-{slot}-{index}.{ext}"
-            path = IMAGES_DIR / name
-            path.write_bytes(data)
-            downloaded.append(name)
+            source = Image.open(__import__("io").BytesIO(data)).convert("RGB")
+            raw_path = IMAGES_DIR / f"{date_stamp}-source-{index}.jpg"
+            source.thumbnail((1800, 1800))
+            source.save(raw_path, "JPEG", quality=88, optimize=True)
+            downloaded.append((raw_path, image_url))
         except Exception as exc:
             LOGGER.info("Image download skipped: %s", exc)
     return downloaded
 
 
-def build_post(article: dict[str, Any], slot: str) -> str:
+def load_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+    ]
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(candidate, size=size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, max_width: int) -> list[str]:
+    words = text.split()
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if draw.textbbox((0, 0), candidate, font=font)[2] <= max_width:
+            current = candidate
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
+def create_social_graphic(source_path: Path, article: dict[str, Any], index: int, date_stamp: str) -> Path:
+    """Create an editorial square card using the real article image + sourced context."""
+    image = Image.open(source_path).convert("RGB")
+    canvas_size = 1200
+    image = ImageOps.fit(image, (canvas_size, canvas_size), method=Image.Resampling.LANCZOS)
+    # Rotate between visual treatments so the daily card is not identical.
+    layout = random.choice(("bottom-panel", "full-overlay", "side-panel"))
+    draw = ImageDraw.Draw(image, "RGBA")
+    title = article["title"].strip()
+    summary = article["summary"]
+    context = summary[:180].rsplit(" ", 1)[0] if len(summary) > 180 else summary
+    if index > 1:
+        title = context or article["title"]
+        context = f"More context from {article['source']}"
+    small_font = load_font(30)
+    title_font = load_font(64 if len(title) < 75 else 52, bold=True)
+    context_font = load_font(28)
+
+    if layout == "bottom-panel":
+        draw.rectangle((0, 650, 1200, 1200), fill=(8, 15, 28, 226))
+        panel_x, panel_y, max_width = 72, 710, 1056
+    elif layout == "side-panel":
+        draw.rectangle((0, 0, 650, 1200), fill=(8, 15, 28, 222))
+        panel_x, panel_y, max_width = 58, 110, 535
+    else:
+        # Full-card tint plus strong lower contrast panel.
+        draw.rectangle((0, 0, 1200, 1200), fill=(8, 15, 28, 105))
+        draw.rounded_rectangle((54, 620, 1146, 1146), radius=42, fill=(8, 15, 28, 218))
+        panel_x, panel_y, max_width = 96, 690, 1008
+
+    niche_label = NICHE_LABELS.get(article["niche"], "Technology")
+    draw.text((panel_x, panel_y), niche_label.upper(), font=small_font, fill=(125, 210, 255, 255))
+    y = panel_y + 58
+    for line in wrap_text(draw, title, title_font, max_width)[:5]:
+        draw.text((panel_x, y), line, font=title_font, fill=(255, 255, 255, 255), stroke_width=1, stroke_fill=(0, 0, 0, 110))
+        y += 78
+    if context and y < 1050:
+        y += 14
+        for line in wrap_text(draw, context, context_font, max_width)[:2]:
+            draw.text((panel_x, y), line, font=context_font, fill=(230, 236, 245, 255))
+            y += 40
+    footer = f"ARTICLE: {article['source']}  •  REVIEW SOURCE BEFORE SHARING"
+    draw.text((panel_x, 1135), footer[:70], font=load_font(18), fill=(220, 225, 235, 255))
+    output = IMAGES_DIR / f"{date_stamp}-linkedin-card-{index}.jpg"
+    image.save(output, "JPEG", quality=90, optimize=True)
+    return output
+
+
+def make_post(article: dict[str, Any]) -> str:
+    niche = NICHE_LABELS.get(article["niche"], "Technology")
     title = article["title"]
     summary = article["summary"]
-    link = article["link"]
-    if slot == "programming":
-        opening = f"Developer bookmark: {title}"
-        closing = "Worth testing in a small project and keeping only if it improves your workflow."
-    elif slot == "design":
-        opening = f"Design inspiration: {title}"
-        closing = "A useful reminder to look at the details behind the visual result—not just the screenshot."
-    else:
-        opening = f"Tech update: {title}"
-        closing = "I’m saving this to follow how the technology develops and where it becomes useful."
-    lines = [opening, ""]
+    # Context is grounded only in the feed description; do not invent benefits.
+    lines = [f"{title}", ""]
     if summary:
         lines.extend([summary, ""])
-    else:
-        lines.extend(["Open the source for the details and add your own specific takeaway before sharing.", ""])
-    lines.extend([closing, "", f"Read the original: {link}", "",
-                  " ".join(f"#{tag}" for tag in HASHTAGS[slot])])
+    lines.extend([
+        f"Topic: {niche}.",
+        "",
+        "What caught my attention is the specific idea in this article—not just the headline.",
+        "I’d test or evaluate it against a real project before adopting it. What would you try first?",
+        "",
+        f"Read the original: {article['link']}",
+        "",
+        HASHTAGS.get(article["niche"], "#Technology #Programming #Design"),
+    ])
     return "\n".join(lines)
 
 
-def write_draft(slot: str, article: dict[str, Any], date_stamp: str) -> list[str]:
-    images = download_images(find_image_urls(article), date_stamp, slot)
-    post = build_post(article, slot)
-    filename = f"linkedin-{slot}-{date_stamp}.md"
+def write_draft(article: dict[str, Any], date_stamp: str) -> int:
+    source_images = download_images(find_image_urls(article), date_stamp)
+    graphics: list[Path] = []
+    for index, (source_path, _image_url) in enumerate(source_images, start=1):
+        try:
+            graphics.append(create_social_graphic(source_path, article, index, date_stamp))
+        except Exception as exc:
+            LOGGER.warning("Could not create custom image %s: %s", source_path.name, exc)
+
+    niche = article["niche"]
+    label = NICHE_LABELS.get(niche, "Technology")
+    post = make_post(article)
+    filename = f"linkedin-post-{date_stamp}.md"
     output = DRAFTS_DIR / filename
-    label = {"trending": "Trending tech/news", "programming": "Programming tip or tutorial", "design": "Design/UI inspiration"}[slot]
     content = [
-        f"# {label} — {date_stamp}", "",
-        "> Draft only. Check the source, add your own experience or specific takeaway, and confirm image rights before publishing.", "",
+        f"# LinkedIn Draft — {date_stamp}", "",
+        "> One-topic daily draft. Verify the article, edit the opinion to match your own experience, and check image rights before publishing.", "",
+        f"**Niche:** {label}",
         f"**Topic:** {article['title']}",
         f"**Published:** {article['published'].isoformat()}",
         f"**Source:** {article['source']}",
         f"**Article:** {article['link']}",
+        "", "## Suggested post", "", post, "",
+        "## Custom article graphics", "",
     ]
-    if isinstance(article["points"], int):
-        content.append(f"**Hacker News:** {article['points']} points / {article['comments'] or 0} comments")
-    content.extend(["", "## Suggested post text", "", post, "", "## Images", ""])
-    if images:
-        for image_name in images:
-            content.extend([f"![Article image](images/{image_name})", "", f"Image file: drafts/images/{image_name}", ""])
-        content.append("> Up to three images were collected from RSS or article metadata/content. Check license/attribution. The Markdown images are a review preview; LinkedIn needs separate media upload when publishing.")
+    if graphics:
+        for graphic in graphics:
+            content.extend([f"![Custom article graphic](images/{graphic.name})", "", f"Image file: drafts/images/{graphic.name}", ""])
+        content.append("> These are designed editorial cards made from article imagery and its headline/context. They are not AI-generated illustrations. Confirm image reuse rights and attribution before posting.")
     else:
-        content.append("No suitable article images could be downloaded for this story. Use the article page's image manually if appropriate.")
+        content.extend([
+            "No usable article image was found. This draft is text-first; use the article's own image only if you have permission.",
+            "",
+            "> Image-led option: keep the post copy short, use one or more relevant article images, and retain the article link/source for context.",
+        ])
     output.write_text("\n".join(content) + "\n", encoding="utf-8")
-    LOGGER.info("Created %s with %d image(s)", filename, len(images))
-    return images
+    LOGGER.info("Created one topic draft: %s (%d custom image(s))", filename, len(graphics))
+    return len(graphics)
 
 
 def main() -> int:
@@ -298,25 +411,35 @@ def main() -> int:
     if not articles:
         LOGGER.error("No fresh articles found from configured feeds.")
         return 1
-    selected = choose_articles(articles)
-    date_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    pack = [f"# Daily LinkedIn Content Pack — {date_stamp}", "",
-            "> Choose one draft to personalize and publish. These are source-based drafts, not AI-written analysis.", ""]
-    total_images = 0
-    for slot in ("trending", "programming", "design"):
-        article = selected.get(slot)
-        if not article:
-            pack.extend([f"## {slot.title()}", "", "No matching fresh article found today.", ""])
-            continue
-        image_names = write_draft(slot, article, date_stamp)
-        total_images += len(image_names)
-        pack.extend([f"## {slot.title()}", "", f"**{article['title']}**", f"Source: {article['link']}",
-                     f"Draft file: drafts/linkedin-{slot}-{date_stamp}.md",
-                     f"Images downloaded: {len(image_names)}", ""])
+    selected = choose_one(articles)
+    if not selected:
+        LOGGER.error("No topic could be selected.")
+        return 1
+
+    # Use the local India calendar date for daily naming and schedule consistency.
+    now_ist = datetime.now(timezone.utc).astimezone(IST)
+    date_stamp = now_ist.strftime("%Y-%m-%d")
+    # Randomize graphic treatment; selection is randomized above as well.
+    random.seed(f"{date_stamp}-{selected['link']}-{os.getenv('GITHUB_RUN_ID', 'manual')}")
+    count = write_draft(selected, date_stamp)
     pack_path = DRAFTS_DIR / f"linkedin-content-pack-{date_stamp}.md"
-    pack_path.write_text("\n".join(pack), encoding="utf-8")
-    print(f"Content pack: {pack_path}")
-    print(f"Drafts created: {len(selected)}; images downloaded: {total_images}")
+    pack_path.write_text(
+        "\n".join([
+            f"# Daily LinkedIn Content — {date_stamp}", "",
+            "One topic only. Niche and article are randomly selected from fresh, source-based candidates.", "",
+            f"**Selected niche:** {NICHE_LABELS.get(selected['niche'], selected['niche'])}",
+            f"**Selected topic:** {selected['title']}",
+            f"**Source:** {selected['link']}",
+            f"**Draft:** drafts/linkedin-post-{date_stamp}.md",
+            f"**Custom graphics:** {count}",
+            "",
+            "> Selection uses recency and relevance signals, then randomizes among stronger candidates. It does not prove a topic is globally trending or viral.",
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    print(f"Selected one topic: {selected['title']}")
+    print(f"Daily draft: {DRAFTS_DIR / f'linkedin-post-{date_stamp}.md'}")
+    print(f"Custom graphics: {count}")
     return 0
 
 
