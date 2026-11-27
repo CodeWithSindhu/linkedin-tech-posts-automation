@@ -1,72 +1,73 @@
 # LinkedIn Tech Posts Automation
 
-A free, GitHub Actions-based daily content-pack generator for technology news, programming tutorials/tips, and design/UI inspiration.
+A free, GitHub Actions-based daily LinkedIn draft generator. It runs on GitHub-hosted runners, so your PC can be switched off.
 
-> **Draft-only mode.** It does not publish to LinkedIn and does not need LinkedIn credentials. Your PC can be switched off because GitHub-hosted runners execute the workflow.
+**Draft-only:** It does not publish to LinkedIn and does not need LinkedIn credentials or a paid AI API.
 
-## What it creates each day
+## Daily behavior
 
-The generator creates up to three separate drafts:
+The generator creates **one topic and one LinkedIn draft per run**, not three unrelated category posts.
 
-1. **Trending tech/news** — recent technology and developer-tool stories, with Hacker News engagement used as one signal when available.
-2. **Programming tip/tutorial** — recent posts from tagged developer feeds (web development, JavaScript, programming, tutorials, productivity) and programming publications.
-3. **Design/UI inspiration** — articles from design and frontend publications such as Smashing Magazine, Codrops, and UX Collective.
+It randomly chooses an available niche and a recent, relevant article from a broad technology mix:
 
-Each draft has its own source link and may include up to three downloaded article images. A daily content-pack index links to all generated drafts.
+- Frontend and backend development
+- Modern CSS and styling techniques
+- JavaScript, React, Python, and WordPress
+- Databases, DevOps, cloud, and developer tools
+- AI, cybersecurity, and open source
+- UI/UX, design, tutorials, productivity tips, and smart developer hacks
+- General technology news
 
-## How it works
+It filters by article age, scores freshness and practical relevance, then randomizes among stronger candidates. Random selection means the niche and topic can vary; it does **not** mean every selected item is objectively trending or viral.
 
-1. GitHub Actions runs daily on a GitHub-hosted runner.
-2. Python reads public RSS/Atom feeds and filters out articles older than the configured age.
-3. It ranks candidates by freshness, category relevance, topic keywords, and Hacker News points/comments where available.
-4. It creates Markdown drafts and downloads usable article images from RSS media or article metadata/content.
-5. The draft pack, Markdown files, and downloaded images are uploaded as the workflow artifact and committed to `drafts/`.
+## Output
 
-The workflow can also be started manually from **Actions → Generate LinkedIn Draft → Run workflow**.
+The workflow writes:
+
+- drafts/linkedin-post-YYYY-MM-DD.md — one article, its source context, and one suggested post
+- drafts/linkedin-content-pack-YYYY-MM-DD.md — a short index of that same topic
+- drafts/images/ — downloaded source images and customized social graphics when suitable images are available
+
+## Context and post copy
+
+The post uses the article title and feed description as source context. It avoids adding unverified technical claims or fabricated code tips. The copy is still a template-based draft, not expert analysis or AI-written content. Edit the suggested opinion/question so it accurately reflects your own experience before posting.
+
+## Article image treatment
+
+When an article image is available, the script uses Pillow to create a square editorial social graphic with:
+
+- The article's actual image as the background
+- The topic/niche label
+- A readable headline and available summary context
+- A randomized visual panel treatment
+
+If multiple relevant article images are found, the workflow can create up to three coordinated graphics for the **same article/topic**. If no image is available, it produces a text-first draft and does not invent an image.
+
+These graphics are image layouts made from source imagery, not AI-generated illustrations. Check publisher image rights, licensing, attribution, and suitability before reuse. Image downloads do not grant permission to repost.
 
 ## Sources
 
-The configured feeds include:
+Free public RSS/Atom sources include Hacker News, Google News technology search, GitHub Blog/Changelog, DEV Community topic feeds, Stack Overflow Blog, CSS-Tricks, Smashing Magazine, Codrops, and UX Collective. Feed availability and article quality vary.
 
-- Hacker News and Google News technology search
-- GitHub Blog and GitHub Changelog
-- DEV Community tags: webdev, JavaScript, programming, tutorial, productivity
-- Stack Overflow Blog and CSS-Tricks
-- Smashing Magazine, Codrops, and UX Collective
+## Schedule and testing
 
-RSS feeds are free to read, but their availability, content quality, image metadata, and posting frequency vary. The script selects recent candidates; it cannot guarantee every selected item is genuinely viral or universally trending.
+- Scheduled daily at **09:00 Asia/Kolkata** (03:30 UTC)
+- Can also be started manually from **Actions → Generate LinkedIn Draft → Run workflow**
+- GitHub may delay scheduled workflows during high load
 
-## Images
-
-The generator attempts to collect up to three article images from RSS media fields, social preview metadata, and article-body image tags. Supported downloads are JPEG, PNG, or WebP up to 4 MB each.
-
-Images are included in the artifact under `drafts/images/` and previewed in each Markdown draft. Image extraction is best-effort: some publishers block automated requests or provide no suitable image.
-
-**Check usage rights, attribution, and relevance before publishing.** Downloading an image does not grant permission to reuse it. Markdown image previews are not LinkedIn media uploads; publishing with images will require uploading the image files through LinkedIn's media API.
-
-## Run it
-
-1. Open the repository's **Actions** tab and enable workflows if GitHub asks.
-2. Open **Generate LinkedIn Draft**.
-3. Click **Run workflow**.
-4. Download the `linkedin-post-draft` artifact from the completed run, or inspect the committed files in `drafts/`.
-
-The schedule is **09:00 Asia/Kolkata** (03:30 UTC). GitHub may delay scheduled workflows during high load.
+Download the linkedin-post-draft artifact from a completed run, or inspect the committed drafts files.
 
 ## Limitations
 
-- No AI model is used; this keeps the workflow free and avoids external API keys.
-- The post copy is a structured source-based draft, not original expert analysis or fact-checking.
-- A tutorial feed can provide a tutorial topic, but the script does not invent step-by-step code tips. Add your own practical experience or rewrite the draft before posting.
-- Only one article is selected per content category each day; review the source before publishing.
+- No AI model is used; this keeps the automation free and avoids external API keys.
+- RSS feeds do not reliably provide popularity data. Hacker News engagement may be present, but the selection is not a real-time trend-ranking system.
+- Article summaries may be incomplete or publisher-formatted. Review the source before posting.
+- The image-card design may crop source images; inspect the output and check rights.
+- LinkedIn publishing is not enabled. Image publishing later requires uploading media to LinkedIn first and obtaining appropriate API permission.
 
-## Customization
+## Customize
 
-Edit `FEEDS`, `MAX_ARTICLE_AGE_HOURS`, and `HASHTAGS` in `src/generate_draft.py`.
-
-## LinkedIn publishing (future phase)
-
-Automatic publishing requires a LinkedIn Developer application, appropriate product/permission approval, and OAuth authorization. Credentials must be stored in GitHub Actions Secrets, never in source code. For image posts, each image must be uploaded to LinkedIn as media before creating the post.
+Edit FEEDS, NICHE_LABELS, HASHTAGS, and MAX_ARTICLE_AGE_HOURS in src/generate_draft.py.
 
 ## License
 
